@@ -1,6 +1,5 @@
 import express from "express";
 import AWS from "aws-sdk";
-import sharp from "sharp";
 
 const app = express();
 const port = 3000;
@@ -8,7 +7,10 @@ const port = 3000;
 // ✅ Enable CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept"
+  );
   next();
 });
 
@@ -18,7 +20,7 @@ const s3 = new AWS.S3({
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
 });
 
-// ✅ Root endpoint
+// ✅ Root endpoint (for sanity check)
 app.get("/", (req, res) => {
   res.send("✅ Server is running! Use /albums or /images/:albumName");
 });
@@ -26,11 +28,17 @@ app.get("/", (req, res) => {
 // ✅ List all albums (folders under Weddings/)
 app.get("/albums", async (req, res) => {
   try {
-    const params = { Bucket: "curvewrotofoliowebsite", Prefix: "Weddings/", Delimiter: "/" };
+    const params = {
+      Bucket: "curvewrotofoliowebsite",
+      Prefix: "Weddings/",
+      Delimiter: "/",
+    };
     const data = await s3.listObjectsV2(params).promise();
 
-    const albums = (data.CommonPrefixes || []).map(prefix =>
-      decodeURIComponent(prefix.Prefix.replace("Weddings/", "").replace("/", ""))
+    const albums = (data.CommonPrefixes || []).map((prefix) =>
+      decodeURIComponent(
+        prefix.Prefix.replace("Weddings/", "").replace("/", "")
+      )
     );
 
     res.json(albums);
@@ -40,25 +48,32 @@ app.get("/albums", async (req, res) => {
   }
 });
 
-// ✅ Fetch images with thumbnails
+// ✅ Fetch images inside a specific album
 app.get("/images/:albumName", async (req, res) => {
   try {
     const albumName = decodeURIComponent(req.params.albumName);
-    const params = { Bucket: "curvewrotofoliowebsite", Prefix: `Weddings/${albumName}/` };
+    const params = {
+      Bucket: "curvewrotofoliowebsite",
+      Prefix: `Weddings/${albumName}/`,
+    };
 
     const data = await s3.listObjectsV2(params).promise();
 
     if (!data.Contents || data.Contents.length === 0) return res.json([]);
 
-    const urls = data.Contents
-      .filter(obj => obj.Key.match(/\.(jpe?g|png|gif)$/i))
-      .map(obj => {
-        const full = `https://${params.Bucket}.s3.eu-north-1.amazonaws.com/${encodeURI(obj.Key)}`;
-        const thumb = full.replace("Weddings", "Thumbnails");
-        return { thumb, full };
-      });
+    // 🔥 Return both thumb + full URLs
+    const urls = data.Contents.filter((obj) =>
+      obj.Key.match(/\.(jpe?g|png|gif)$/i)
+    ).map((obj) => {
+      const full = `https://${params.Bucket}.s3.eu-north-1.amazonaws.com/${encodeURI(
+        obj.Key
+      )}`;
+      // 👇 assumes thumbnails are stored in a parallel "Thumbnails" folder
+      const thumb = full.replace("Weddings", "Thumbnails");
+      return { thumb, full };
+    });
 
-    res.json(urls); // 👈 make sure this is an ARRAY of objects
+    res.json(urls); // ✅ always return an ARRAY
   } catch (err) {
     console.error("S3 fetch error:", err);
     res.status(500).json({ error: "Failed to fetch images" });
